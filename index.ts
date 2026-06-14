@@ -42,6 +42,10 @@ const CODEX_TARGET_FRAGMENTS = [
 // read the config file ourselves and never have to guess where it lives.
 let uaOverrideEnabled = false;
 
+// Active target fragments — starts with hardcoded defaults, merged with
+// user-provided `target_domains` from config in the chat.headers hook.
+const activeTargetFragments: string[] = [...CODEX_TARGET_FRAGMENTS];
+
 function debugLog(line: string): void {
   if (!process.env.OPENCODE_RESIDENCY_DEBUG) return;
   const target = process.env.OPENCODE_RESIDENCY_DEBUG_FILE;
@@ -79,7 +83,7 @@ function patchFetchForCodex(): void {
       return origFetch(input as RequestInfo | URL, init);
     }
 
-    if (!uaOverrideEnabled || !CODEX_TARGET_FRAGMENTS.some((f) => url.includes(f))) {
+    if (!uaOverrideEnabled || !activeTargetFragments.some((f) => url.includes(f))) {
       return origFetch(input as RequestInfo | URL, init);
     }
 
@@ -123,6 +127,18 @@ export const OpenAIResidencyPlugin: Plugin = async () => ({
     // macOS ~/Library/Application Support, XDG_CONFIG_HOME overrides, and
     // jsonc files (comments/trailing commas tripping JSON.parse).
     uaOverrideEnabled = input.provider?.options?.ua_override === true;
+    // Merge user-provided target domains with hardcoded defaults.
+    // Always reset to defaults first to reflect config changes mid-session.
+    activeTargetFragments.length = 0;
+    activeTargetFragments.push(...CODEX_TARGET_FRAGMENTS);
+    const custom = input.provider?.options?.target_domains;
+    if (Array.isArray(custom)) {
+      for (const d of custom) {
+        if (typeof d === "string" && d && !activeTargetFragments.includes(d)) {
+          activeTargetFragments.push(d);
+        }
+      }
+    }
     const residency = input.provider?.options?.enforce_residency;
     if (residency) {
       output.headers["x-openai-internal-codex-residency"] = String(residency);

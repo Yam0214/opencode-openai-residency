@@ -19,13 +19,20 @@ Add to your `opencode.json`:
   "provider": {
     "openai": {
       "options": {
-        "enforce_residency": "us",        // feature 1 — residency header
-        "ua_override": true               // feature 2 — gpt-5.5 unlock (opt-in)
+        "enforce_residency": "us",                          // feature 1 — residency header
+        "ua_override": true,                                // feature 2 — gpt-5.5 unlock
+        "target_domains": ["custom.openai.com", "extra.codex.backend"]  // feature 3 — custom domains (optional)
       }
     }
   }
 }
 ```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enforce_residency` | `string` | *(unset)* | Region string for the `x-openai-internal-codex-residency` header (e.g. `"us"`). Leave unset to disable. |
+| `ua_override` | `boolean` | `false` | Override `User-Agent` and `originator` headers to pass OpenAI's `codex_cli_rs` client gate. |
+| `target_domains` | `string[]` | `[]` | Additional domain fragments to intercept (merged with defaults `chatgpt.com/backend-api/codex` and `api.openai.com`). |
 
 Restart OpenCode. The plugin is auto-loaded.
 
@@ -48,7 +55,7 @@ If either is wrong, the request enters reasoning and dies mid-stream with a sile
 
 opencode's default UA (`opencode/1.14.39 ...`) and originator (`opencode`) both fail it. **Why a `chat.headers` hook can't fix this**: opencode 1.14.39's Vercel AI SDK constructs its own request and ignores hook overrides on default headers like `User-Agent`. The only effective injection point is patching `globalThis.fetch` at module load, which is what this plugin does when `ua_override: true`.
 
-The patch is scoped to `chatgpt.com/backend-api/codex` and `api.openai.com` only; all other fetches pass through untouched.
+The patch is scoped to `chatgpt.com/backend-api/codex` and `api.openai.com` by default; all other fetches pass through untouched. You can add custom domains via `target_domains` (see below).
 
 ### Why opt-in (default off)
 
@@ -71,6 +78,12 @@ Example output when `ua_override` is on:
 ```
 
 If you set `ua_override: false` (or omit it) the log file stays empty — the patch isn't installed, fetches pass through untouched.
+
+## Feature 3 — Custom target domains
+
+By default, the UA override patch only intercepts requests to `chatgpt.com/backend-api/codex` and `api.openai.com`. If OpenAI routes codex traffic through additional domains, or you need to intercept other endpoints, add them via `target_domains` in your config (see Install section above).
+
+Custom domains are **merged** with the defaults — you don't need to repeat the hardcoded ones. Changes take effect on the next chat call (no restart required).
 
 ## License
 
