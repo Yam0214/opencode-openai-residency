@@ -1,5 +1,3 @@
 node_modules/
 dist/
 *.tsbuildinfo
-.opencode
-AGENTS.md

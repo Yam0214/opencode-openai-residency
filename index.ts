@@ -120,12 +120,14 @@ patchFetchForCodex();
 
 export const OpenAIResidencyPlugin: Plugin = async () => ({
   "chat.headers": async (input, output) => {
-    if (input.model.providerID !== "openai") return;
     // Sync flag from opencode-provided, jsonc-parsed, path-resolved config.
     // This avoids the 1.1.0 bug where reading ~/.config/opencode/opencode.json
     // ourselves silently failed for: project-local configs, Windows %APPDATA%,
     // macOS ~/Library/Application Support, XDG_CONFIG_HOME overrides, and
     // jsonc files (comments/trailing commas tripping JSON.parse).
+    //
+    // No providerID guard — ua_override applies to ALL providers so that
+    // relay/proxy stations (中转站) that require codex client identity work.
     uaOverrideEnabled = input.provider?.options?.ua_override === true;
     // Merge user-provided target domains with hardcoded defaults.
     // Always reset to defaults first to reflect config changes mid-session.
@@ -139,9 +141,12 @@ export const OpenAIResidencyPlugin: Plugin = async () => ({
         }
       }
     }
-    const residency = input.provider?.options?.enforce_residency;
-    if (residency) {
-      output.headers["x-openai-internal-codex-residency"] = String(residency);
+    // Residency header is OpenAI-specific.
+    if (input.model.providerID === "openai") {
+      const residency = input.provider?.options?.enforce_residency;
+      if (residency) {
+        output.headers["x-openai-internal-codex-residency"] = String(residency);
+      }
     }
   },
 });

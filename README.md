@@ -3,7 +3,8 @@
 [OpenCode](https://github.com/anomalyco/opencode) plugin for OpenAI Codex API tweaks:
 
 1. **Data residency** — adds `x-openai-internal-codex-residency` for OpenAI Enterprise workspaces with regional restrictions.
-2. **gpt-5.5 unlock** *(opt-in)* — overrides the `User-Agent` / `originator` headers on outgoing codex requests so they pass OpenAI's `codex_cli_rs` client gate.
+2. **gpt-5.5 unlock** *(opt-in)* — overrides the `User-Agent` / `originator` headers on outgoing codex requests so they pass OpenAI's `codex_cli_rs` client gate. Works for **any provider** (including relay/proxy stations).
+3. **Custom target domains** — extends the URL matching scope for the UA override to cover relay/proxy endpoints.
 
 This mirrors how the official [Codex CLI](https://github.com/openai/codex/blob/main/codex-rs/core/src/default_client.rs) talks to the Codex backend.
 
@@ -19,9 +20,9 @@ Add to your `opencode.json`:
   "provider": {
     "openai": {
       "options": {
-        "enforce_residency": "us",                          // feature 1 — residency header
-        "ua_override": true,                                // feature 2 — gpt-5.5 unlock
-        "target_domains": ["custom.openai.com", "extra.codex.backend"]  // feature 3 — custom domains (optional)
+        "enforce_residency": "us",                          // feature 1 — residency header (openai only)
+        "ua_override": true,                                // feature 2 — codex client identity
+        "target_domains": ["relay.example.com", "proxy.example.com"]  // feature 3 — custom domains (optional)
       }
     }
   }
@@ -30,9 +31,9 @@ Add to your `opencode.json`:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enforce_residency` | `string` | *(unset)* | Region string for the `x-openai-internal-codex-residency` header (e.g. `"us"`). Leave unset to disable. |
-| `ua_override` | `boolean` | `false` | Override `User-Agent` and `originator` headers to pass OpenAI's `codex_cli_rs` client gate. |
-| `target_domains` | `string[]` | `[]` | Additional domain fragments to intercept (merged with defaults `chatgpt.com/backend-api/codex` and `api.openai.com`). |
+| `enforce_residency` | `string` | *(unset)* | Region string for the `x-openai-internal-codex-residency` header (e.g. `"us"`). OpenAI provider only. |
+| `ua_override` | `boolean` | `false` | Override `User-Agent` and `originator` headers to pass `codex_cli_rs` client gate. **Works for all providers.** |
+| `target_domains` | `string[]` | `[]` | Additional URL fragments to intercept (merged with defaults `chatgpt.com/backend-api/codex` and `api.openai.com`). |
 
 Restart OpenCode. The plugin is auto-loaded.
 
@@ -54,6 +55,8 @@ As of 2026-05-07, OpenAI gates `gpt-5.5` (and other reasoning models on the code
 If either is wrong, the request enters reasoning and dies mid-stream with a silent `server_error` — looks like backend instability, isn't. Only the official Codex Rust CLI passes the check by default.
 
 opencode's default UA (`opencode/1.14.39 ...`) and originator (`opencode`) both fail it. **Why a `chat.headers` hook can't fix this**: opencode 1.14.39's Vercel AI SDK constructs its own request and ignores hook overrides on default headers like `User-Agent`. The only effective injection point is patching `globalThis.fetch` at module load, which is what this plugin does when `ua_override: true`.
+
+The patch applies to **any provider** — not just OpenAI. This is intentional: relay/proxy stations (中转站) that route through `chatgpt.com/backend-api/codex` or custom domains also require the `codex_cli_rs` client identity.
 
 The patch is scoped to `chatgpt.com/backend-api/codex` and `api.openai.com` by default; all other fetches pass through untouched. You can add custom domains via `target_domains` (see below).
 
@@ -81,9 +84,22 @@ If you set `ua_override: false` (or omit it) the log file stays empty — the pa
 
 ## Feature 3 — Custom target domains
 
-By default, the UA override patch only intercepts requests to `chatgpt.com/backend-api/codex` and `api.openai.com`. If OpenAI routes codex traffic through additional domains, or you need to intercept other endpoints, add them via `target_domains` in your config (see Install section above).
+By default, the UA override patch only intercepts requests to `chatgpt.com/backend-api/codex` and `api.openai.com`. If your relay/proxy station uses a different domain, add it via `target_domains`:
 
-Custom domains are **merged** with the defaults — you don't need to repeat the hardcoded ones. Changes take effect on the next chat call (no restart required).
+```jsonc
+{
+  "provider": {
+    "relay": {
+      "options": {
+        "ua_override": true,
+        "target_domains": ["new.sharedchat.cc/codex", "muyuan.do"]
+      }
+    }
+  }
+}
+```
+
+Custom domains are **merged** with the defaults — you don't need to repeat `chatgpt.com/backend-api/codex` or `api.openai.com`. Changes take effect on the next chat call (no restart required).
 
 ## License
 
